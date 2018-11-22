@@ -5,7 +5,7 @@ setup(
     name='CancerDeepLearning',
     url='CancerDeepLearning',
     author='https://github.com/BiomedicalMachineLearning/CancerDeepLearning.git',
-    author_email='quan.nguyen@uq.edu.au',
+    author_email='quan.nguyen@uq.edu.au; a.su@uq.net.au',
     # package modules
     packages=['CancerDeepLearning'],
     # dependencies
