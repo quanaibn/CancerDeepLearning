@@ -216,6 +216,12 @@ def model_evaluation(true_y, predict_y):
           "Support:", support, "\n",
           )
 
+    plt.plot(fpr, tpr)
+    plt.title('False positive rates against true positive rates')
+    plt.xlabel('False positive rates')
+    plt.ylabel('True positive rates')
+    plt.show()
+
 
 
 def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round=500,c=0.01):
