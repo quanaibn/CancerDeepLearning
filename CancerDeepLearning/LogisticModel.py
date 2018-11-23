@@ -62,7 +62,7 @@ plt.show()
 
 
 print(len(x_vals_cnv))
-print(x_vals_cnv.shape)
+print(x_vals_cnv_removed_nan.shape)
 print(x_vals_rna.shape)
 print(y_vals.shape)
 
@@ -159,6 +159,7 @@ def run_model(train_x, train_y, test_x, test_y,round=500,c=0.1):
     prediction = tf.round(tf.sigmoid(model_output))  # model_output  y = 1 / (1 + exp(-x))
     predictions_correct = tf.cast(tf.equal(prediction, y_target), tf.float32)
     accuracy = tf.reduce_mean(predictions_correct)
+
     # Declare batch size
     batch_size = 25
 
@@ -166,6 +167,9 @@ def run_model(train_x, train_y, test_x, test_y,round=500,c=0.1):
         loss_vec = []
         train_acc = []
         test_acc = []
+        predict_y = []
+        true_y = []
+
 
         # Run training loop
         for i in range(round):  # on delta run range(5000)
@@ -184,12 +188,35 @@ def run_model(train_x, train_y, test_x, test_y,round=500,c=0.1):
             # get acc for testing
             temp_acc_test = sess.run(accuracy, feed_dict={x_data: test_x, y_target: test_y})
             test_acc.append(temp_acc_test)
-            # print running stat
+            # get predicted y value
+            temp_prediction = sess.run(prediction, feed_dict={x_data: test_x, y_target: test_y})
+            predict_y.append(temp_prediction)
+            true_y.append(test_y)
 
-        mean_test_acc = sum(test_acc[-200:]) / len(test_acc[-200:])
-        print(mean_test_acc)
+        mean_test_acc = sum(test_acc[-round//3:]) / len(test_acc[-round//3:])
+        print("Accuracy:", mean_test_acc)
         plot(loss_vec, train_acc, test_acc)
-        return loss_vec, train_acc, test_acc, mean_test_acc
+
+        return true_y[round-1], predict_y[round-1]
+
+def model_evaluation(true_y, predict_y):
+    tn, fp, fn, tp = metrics.confusion_matrix(true_y, predict_y).ravel()
+    fpr, tpr, thresholds = metrics.roc_curve(true_y, predict_y)
+    precision, recall, f1, support = metrics.precision_recall_fscore_support(true_y, predict_y)
+    print("True negative:", tn,"\n",
+          "False negative:", fn,"\n",
+          "False positive:", fp, "\n",
+          "True positive:", tp, "\n",
+          "False positive rates:", fpr, "\n",
+          "True positive rates:", tpr, "\n",
+          "Threshold:", thresholds, "\n",
+          "Precision:", precision, "\n",
+          "Recall:", recall, "\n",
+          "F1:", f1, "\n",
+          "Support:", support, "\n",
+          )
+
+
 
 def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round=500,c=0.01):
     # Initialize placeholders
@@ -200,7 +227,7 @@ def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round
     x_data = tf.placeholder(shape=[None, nFeatures],
                             dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
     x_data2 = tf.placeholder(shape=[None, nFeatures],
-                            dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
+                             dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
 
     y_target = tf.placeholder(shape=[None, dimResponse], dtype=tf.float32)  # tensor with 1 column
     # Initialize variables for regression: "y=sigmoid(A×x_rna+C×x_cnv+b)"
@@ -229,6 +256,8 @@ def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round
         loss_vec = []
         train_acc = []
         test_acc = []
+        predict_y = []
+        true_y = []
 
         # Run training loop
         for i in range(round):  # on delta run range(5000)
@@ -248,41 +277,65 @@ def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round
             # get acc for testing
             temp_acc_test = sess.run(accuracy, feed_dict={x_data: test_x, x_data2: test_x2, y_target: test_y})
             test_acc.append(temp_acc_test)
-            # print running stat
-
-        mean_test_acc = sum(test_acc[-200:]) / len(test_acc[-200:])
-        print(mean_test_acc)
+            # get predicted y
+            temp_prediction = sess.run(prediction, feed_dict={x_data: test_x, x_data2: test_x2,  y_target: test_y})
+            predict_y.append(temp_prediction)
+            true_y.append(test_y)
+        mean_test_acc = sum(test_acc[-round//3:]) / len(test_acc[-round//3:])
+        print("Accuracy:", mean_test_acc)
         plot(loss_vec, train_acc, test_acc)
-        return loss_vec, train_acc, test_acc, mean_test_acc
+
+        return true_y[round-1], predict_y[round-1]
 
 
 # logistic model for RNA seq removed nan
-run_model(x_vals_rna_train_removed_nan, y_vals_train_removed_nan, x_vals_rna_test_removed_nan, y_vals_test_removed_nan)
+y_true, y_predict = run_model(x_vals_rna_train_removed_nan, y_vals_train_removed_nan,
+                              x_vals_rna_test_removed_nan, y_vals_test_removed_nan,c=0.1)
+
+model_evaluation(y_true, y_predict)
 
 # logistic model for cnv removed nan
-run_model(x_vals_cnv_train_removed_nan, y_vals_train_removed_nan, x_vals_cnv_test_removed_nan, y_vals_test_removed_nan)
+y_true, y_predict = run_model(x_vals_cnv_train_removed_nan, y_vals_train_removed_nan,
+                              x_vals_cnv_test_removed_nan, y_vals_test_removed_nan,c=0.1)
+
+model_evaluation(y_true, y_predict)
 
 # logistic model for combined data removed nan
-run_combined_model(x_vals_rna_train_removed_nan, x_vals_cnv_train_removed_nan, y_vals_train_removed_nan, x_vals_rna_test_removed_nan, x_vals_cnv_test_removed_nan, y_vals_test_removed_nan)
+y_true, y_predict = run_combined_model(x_vals_rna_train_removed_nan, x_vals_cnv_train_removed_nan,
+                                       y_vals_train_removed_nan, x_vals_rna_test_removed_nan,
+                                       x_vals_cnv_test_removed_nan, y_vals_test_removed_nan,c=0.1)
+
+model_evaluation(y_true, y_predict)
+
 
 # logistic model for RNA seq with imputation
-run_model(x_vals_rna_train_processed, y_vals_train_processed, x_vals_rna_test_processed, y_vals_test_processed)
+y_true, y_predict = run_model(x_vals_rna_train_processed, y_vals_train, x_vals_rna_test_processed, y_vals_test)
+
+model_evaluation(y_true, y_predict)
 
 # logistic model for cnv with imputation
-run_model(x_vals_cnv_train_processed, y_vals_train_processed, x_vals_cnv_test_processed, y_vals_test_processed)
+y_true, y_predict = run_model(x_vals_cnv_train_processed, y_vals_train, x_vals_cnv_test_processed, y_vals_test,c=0.01)
+
+model_evaluation(y_true, y_predict)
 
 # logistic model for combined data with imputation
-run_combined_model(x_vals_rna_train_processed, x_vals_cnv_train_processed, y_vals_train_processed,
-                   x_vals_rna_test_processed, x_vals_cnv_test_processed, y_vals_test_processed)
+y_true, y_predict = run_combined_model(x_vals_rna_train_processed, x_vals_cnv_train_processed, y_vals_train,
+                   x_vals_rna_test_processed, x_vals_cnv_test_processed, y_vals_test, c=0.1)
+
+model_evaluation(y_true, y_predict)
 
 
 
 
+
+
+
+'''
 # Elastic Net model
 alpha = 0.1
 enet = linear_model.ElasticNet(alpha=alpha, l1_ratio=0.7)
 
-y_pred_enet = enet.fit(x_vals_cnv_train, y_vals_train).predict(x_vals_cnv_test)
+y_pred_enet = enet.fit(x_vals_cnv_train_processed, y_vals_train).predict(x_vals_cnv_test_processed)
 r2_score_enet = metrics.r2_score(y_vals_test, y_pred_enet)
 print(enet)
 print("r^2 on test data : %f" % r2_score_enet)
@@ -294,3 +347,4 @@ plt.legend(loc='best')
 plt.title("Elastic Net R^2: %f"
           % (r2_score_enet))
 plt.show()
+'''
