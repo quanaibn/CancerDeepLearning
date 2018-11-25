@@ -5,9 +5,11 @@ setup(
     name='CancerDeepLearning',
     url='CancerDeepLearning',
     author='https://github.com/BiomedicalMachineLearning/CancerDeepLearning.git',
-    author_email='quan.nguyen@uq.edu.au',
+    author_email='quan.nguyen@uq.edu.au, a.su@uq.edu.au, x.tan3@uq.net.au',
     # package modules
     packages=['CancerDeepLearning'],
+    #declare script
+    scripts=[bin/]
     # dependencies
     install_requires=['numpy', 'tensorflow'],
     # version
