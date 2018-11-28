@@ -173,10 +173,10 @@ def run_model(train_x, train_y, test_x, test_y,round=500,c=0.1):
     x_data = tf.placeholder(shape=[None, nFeatures],
                             dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
     y_target = tf.placeholder(shape=[None, dimResponse], dtype=tf.float32)  # tensor with 1 column
-    # Initialize variables for regression: "y=sigmoid(A×x+b)"
+    # Initialize variables for regression: "y=sigmoid(Ax+b)"
     A = tf.Variable(tf.random_normal(shape=[nFeatures, 1]))
     b = tf.Variable(tf.random_normal(shape=[1, 1]))
-    # Declare model operations "y = A×x + b"
+    # Declare model operations "y = Ax + b"
     model_output = tf.add(tf.matmul(x_data, A), b)
     # Declare loss function (Cross Entropy loss)
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
@@ -277,11 +277,11 @@ def run_combined_model(train_x,train_x2, train_y, test_x, test_x2, test_y, round
                              dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
 
     y_target = tf.placeholder(shape=[None, dimResponse], dtype=tf.float32)  # tensor with 1 column
-    # Initialize variables for regression: "y=sigmoid(A×x_rna+C×x_cnv+b)"
+    # Initialize variables for regression: "y=sigmoid(Ax_rna+Cx_cnv+b)"
     A = tf.Variable(tf.random_normal(shape=[nFeatures, 1]))
     C = tf.Variable(tf.random_normal(shape=[nFeatures, 1]))
     b = tf.Variable(tf.random_normal(shape=[1, 1]))
-    # Declare model operations "y = A×x_rna+C×x_cnv+b"
+    # Declare model operations "y = Ax_rna+Cx_cnv+b"
     model_output = tf.add(tf.add(tf.matmul(x_data, A), tf.matmul(x_data2, C)), b)
     # Declare loss function (Cross Entropy loss)
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
@@ -386,7 +386,7 @@ def run_NN2Layer(train_x,train_x2, train_y, test_x, test_x2, test_y, round=500,c
                              dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
 
     y_target = tf.placeholder(shape=[None, dimResponse], dtype=tf.float32)  # tensor with 1 column
-    # Initialize variables for regression: "y=sigmoid(A×x_rna+C×x_cnv+b)"
+    # Initialize variables for regression: "y=sigmoid(Ax_rna+Cx_cnv+b)"
     # Layer 1
     A1 = tf.Variable(tf.random_normal(shape=[nFeatures, hidden_layer_nodes]))
     C1 = tf.Variable(tf.random_normal(shape=[nFeatures, hidden_layer_nodes]))
@@ -397,7 +397,7 @@ def run_NN2Layer(train_x,train_x2, train_y, test_x, test_x2, test_y, round=500,c
     b2 = tf.Variable(tf.random_normal(shape=[1, 1]))
     # Layer 1 output
     hidden_output = tf.nn.relu(tf.add(tf.add(tf.matmul(x_data, A1), tf.matmul(x_data2, C1)), b1))
-    # Declare model operations "y = A×x_rna+C×x_cnv+b"
+    # Declare model operations "y = Ax_rna+Cx_cnv+b"
     model_output = tf.add(tf.add(tf.matmul(hidden_output, A2), tf.matmul(hidden_output, C2)), b2)
     # Declare loss function (Cross Entropy loss)
     loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
