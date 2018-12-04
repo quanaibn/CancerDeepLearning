@@ -34,6 +34,37 @@ x_vals_rna = x_vals_rna.values
 x_vals_lnc = x_vals_lnc.values
 y_vals = y_vals.values
 
+#
+unique, counts = np.unique(y_vals, return_counts=True)
+y_dict = dict(zip(unique, counts))
+print(sorted(y_dict.items(), key=lambda kv: kv[1], reverse=True))
+
+y_class = y_vals
+for x in range(0, y_vals.shape[0]):
+    for y in range(0, y_vals.shape[1]):
+        try:
+            y_class[x,y] = y_vals[x, y].split(" ")[0]
+        except:
+            y_class[x,y] = y_vals[x, y]
+
+unique, counts = np.unique(y_class, return_counts=True)
+y_dict_processed = dict(zip(unique, counts))
+print(sorted(y_dict_processed.items(), key=lambda kv: kv[1], reverse=True))
+
+y_class_list = ["Carcinoma", "Adenocarcinoma", "Melanoma", "Lymphoma", "Leukemia", "Others"]
+
+for x in range(0, y_class.shape[0]):
+    for y in range(0, y_class.shape[1]):
+        if y_class[x, y] not in y_class_list:
+            y_class[x, y] = y_class_list[-1]
+print(y_class)
+
+y_class_num = y_class
+for x in range(0, y_class_num.shape[0]):
+    for y in range(0, y_class_num.shape[1]):
+        y_class_num[x, y] = y_class_list.index(y_class_num[x, y])
+print(y_class_num)
+
 print(x_vals_cnv.shape)
 print(x_vals_rna.shape)
 print(x_vals_lnc.shape)
@@ -48,8 +79,8 @@ def pre_processing(data_sets:tuple, threshold=0.5, impute_strategy="median"):
     new_data = new_data[~np.all(new_data == 0, axis=1), :]
     new_data = new_data[:, ~np.all(new_data == 0, axis=0)]
     # remove all column and row contain nan higher than threshold
-    new_data = new_data[np.isnan(new_data).sum(axis=1) < threshold * new_data.shape[1], :]
-    new_data = new_data[:, np.isnan(new_data).sum(axis=0) < threshold * new_data.shape[0]]
+    # new_data = new_data[np.isnan(new_data).sum(axis=1) < threshold * new_data[:, :-1].shape[1], :]
+    # new_data = new_data[:, np.isnan(new_data).sum(axis=0) < threshold * new_data[:, :-1].shape[0]]
     # impute missing value and standard scale
     data_preprocess = pipeline.Pipeline([
         ('imputer', impute.SimpleImputer(strategy=impute_strategy)),
@@ -71,6 +102,16 @@ rna_lnc_binary = pre_processing((x_vals_rna, x_vals_lnc, y_vals_bin))
 cnv_lnc_binary = pre_processing((x_vals_cnv, x_vals_lnc, y_vals_bin))
 rna_cnv_lnc_binary = pre_processing((x_vals_rna, x_vals_cnv, x_vals_lnc, y_vals_bin))
 
+# Single data type processed data with binary class
+rna_processed_cate = pre_processing((x_vals_rna, y_class_num))
+cnv_processed_cate = pre_processing((x_vals_cnv, y_class_num))
+lnc_processed_cate = pre_processing((x_vals_lnc, y_class_num))
+
+# Combined processed data with binary class
+rna_cnv_cate = pre_processing((x_vals_rna, x_vals_cnv, y_class_num))
+rna_lnc_cate = pre_processing((x_vals_rna, x_vals_lnc, y_class_num))
+cnv_lnc_cate = pre_processing((x_vals_cnv, x_vals_lnc, y_class_num))
+rna_cnv_lnc_cate = pre_processing((x_vals_rna, x_vals_cnv, x_vals_lnc, y_class_num))
 # Select training and testing sets
 # Set seed for reproducible results
 seed = 99
@@ -356,7 +397,7 @@ def keras_NN(data, lr=0.01**5, epochs=100, batch_size=20):
     model = models.Sequential([
         # first layer
         layers.Dense(512, input_dim=train_x.shape[1]),
-        layers.Activation("relu"),
+        layers.Activation("softmax"),
         layers.Dropout(0.2),
         # second layer
         layers.Dense(256),
@@ -457,4 +498,156 @@ def run_svm_model():
     svm_model(rna_cnv_lnc_binary)
 
 
-run_svm_model()
+# run_svm_model()
+
+def DNN_model(data):
+    train_x, test_x, train_y, test_y = train_test(data)
+    # feature_columns = [tf.contrib.layers.real_valued_column("", dimension=len(train_x[1]))]
+    x_data = tf.placeholder(shape=[None, train_x.shape[1]],
+                            dtype=tf.float32)
+    y_target = tf.placeholder(shape=[None, train_y.shape[1]], dtype=tf.float32)
+    estimator = tf.estimator.DNNClassifier(
+        feature_columns=x_data,
+        hidden_units=[1024, 512, 256],
+        n_classes=6,
+        optimizer=tf.train.AdamOptimizer(learning_rate=0.001))
+
+    def input_fn_train():  # returns x, y
+        pass
+
+    # Define the training inputs
+    input_fn_train = tf.estimator.inputs.numpy_input_fn(
+        x={x_data: train_x},
+        y={y_target: train_y},
+        batch_size=128,
+        num_epochs=1,
+        shuffle=True,
+        queue_capacity=1000,
+        num_threads=1
+    )
+    estimator.train(input_fn=input_fn_train, steps=100)
+
+    def input_fn_eval():  # returns x, y
+        return test_x, test_y
+
+    # metrics = estimator.evaluate(input_fn=input_fn_eval, steps=10)
+
+    def input_fn_predict():  # returns x, None
+        pass
+
+    input_fn_predict = tf.estimator.inputs.numpy_input_fn(
+        x={x_data: test_x},
+        y=None,
+        batch_size=128,
+        num_epochs=1,
+        shuffle=False,
+        queue_capacity=1000,
+        num_threads=1
+    )
+
+    predictions = estimator.predict(input_fn=input_fn_predict)
+
+    model_evaluation(test_y, predictions)
+
+
+def run_DNN_model():
+
+    DNN_model(rna_cnv_lnc_cate)
+
+
+# run_DNN_model()
+
+def decode_one_hot(batch_of_vectors):
+    nonzero_indices = tf.where(tf.not_equal(
+        batch_of_vectors, tf.zeros_like(batch_of_vectors)))
+    reshaped_nonzero_indices = tf.reshape(
+        nonzero_indices[:, -1], tf.shape(batch_of_vectors)[:-1])
+    return reshaped_nonzero_indices
+
+
+def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
+    train_x, test_x, train_y, test_y = train_test(data)
+    train_y = tf.one_hot(indices=np.squeeze(train_y), depth=len(y_class_list))
+    test_y = tf.one_hot(indices=np.squeeze(test_y), depth=len(y_class_list))
+    # Initialize placeholders
+    nFeatures = train_x.shape[1]  # number of cnv/rna
+    dimResponse = train_y.shape[1] #
+
+    # Define inputs for session.run
+    hidden_layer_nodes = 256
+    x_data = tf.placeholder(shape=[None, nFeatures],
+                            dtype=tf.float32)  # tensor with nFeature columns. Note None takes any value when computation takes place
+    y_target = tf.placeholder(shape=[None, dimResponse], dtype=tf.float32)  # tensor with 1 column
+    # Initialize variables for regression: "y=sigmoid(Ax_rna+Cx_cnv+b)"
+    # Layer 1
+    A1 = tf.Variable(tf.random_normal(shape=[nFeatures, hidden_layer_nodes]))
+    b1 = tf.Variable(tf.random_normal(shape=[hidden_layer_nodes]))
+    # Layer 2
+    A2 = tf.Variable(tf.random_normal(shape=[hidden_layer_nodes, 6]))
+    b2 = tf.Variable(tf.random_normal(shape=[1, 6]))
+    # Layer 1 output
+    hidden_output = tf.nn.relu(tf.add(tf.matmul(x_data, A1), b1))
+    # dropout
+    hidden_output = tf.nn.dropout(hidden_output, dropout)
+    # Declare model operations "y = Ax_rna+Cx_cnv+b"
+    model_output = tf.add(tf.matmul(hidden_output, A2), b2)
+    # Declare loss function (Cross Entropy loss)
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model_output, labels=y_target))
+    # Declare optimizer
+    my_opt = tf.train.GradientDescentOptimizer(c)
+    train_step = my_opt.minimize(loss)
+
+    # Initialize global variables
+    init = tf.global_variables_initializer()
+    # Actual Prediction
+    prediction = tf.round(tf.sigmoid(model_output))  # model_output  y = 1 / (1 + exp(-x))
+    predictions_correct = tf.cast(tf.equal(prediction, y_target), tf.float32)
+    accuracy = tf.reduce_mean(predictions_correct)
+    # Declare batch size
+    batch_size = 25
+
+    with tf.Session() as sess:
+        sess.run(init)
+        loss_vec = []
+        train_acc = []
+        test_acc = []
+        predict_y = []
+        true_y = []
+
+        # Run training loop
+        for i in range(rounds):  # on delta run range(5000)
+            # get random batch from training set
+            rand_index = np.random.choice(len(train_x), size=batch_size)
+            rand_x = train_x[rand_index]
+            rand_y = train_y.eval()[rand_index]
+            # run train step
+            sess.run(train_step, feed_dict={x_data: rand_x, y_target: rand_y})
+            # get loss
+            temp_loss = sess.run(loss, feed_dict={x_data: rand_x, y_target: rand_y})
+            loss_vec.append(temp_loss)
+            # get acc for training
+            temp_acc_train = sess.run(accuracy, feed_dict={x_data: rand_x, y_target: rand_y})
+            train_acc.append(temp_acc_train)
+            # get acc for testing
+            temp_acc_test = sess.run(accuracy, feed_dict={x_data: test_x, y_target: test_y.eval()})
+            test_acc.append(temp_acc_test)
+            # get predicted y
+            temp_prediction = sess.run(prediction, feed_dict={x_data: test_x, y_target: test_y.eval()})
+            predict_y.append(temp_prediction)
+            true_y.append(test_y)
+        mean_test_acc = sum(test_acc[-rounds // 3:]) / len(test_acc[-rounds // 3:])
+        print("Accuracy:", mean_test_acc)
+        plot(loss_vec, train_acc, test_acc)
+        print(true_y[rounds - 1].shape)
+        print(predict_y[rounds - 1].shape)
+
+        return decode_one_hot(true_y[rounds - 1]).eval(), decode_one_hot(predict_y[rounds - 1]).eval()
+
+
+def run_NN_model_cate():
+    test_y, predictions = NN_model_cate(rna_cnv_lnc_cate)
+    print(test_y)
+    print(predictions)
+    model_evaluation(test_y, predictions)
+
+run_NN_model_cate()
