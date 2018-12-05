@@ -592,7 +592,7 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
     # Declare model operations "y = Ax_rna+Cx_cnv+b"
     model_output = tf.add(tf.matmul(hidden_output, A2), b2)
     # Declare loss function (Cross Entropy loss)
-    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model_output, labels=y_target))
+    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
     # Declare optimizer
     my_opt = tf.train.GradientDescentOptimizer(c)
     train_step = my_opt.minimize(loss)
@@ -600,8 +600,9 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
     # Initialize global variables
     init = tf.global_variables_initializer()
     # Actual Prediction
-    prediction = tf.round(tf.sigmoid(model_output))  # model_output  y = 1 / (1 + exp(-x))
-    predictions_correct = tf.cast(tf.equal(prediction, y_target), tf.float32)
+    predictions = tf.round(tf.sigmoid(model_output))  # model_output  y = 1 / (1 + exp(-x))
+    prediction = tf.argmax(tf.sigmoid(model_output), axis=1)
+    predictions_correct = tf.cast(tf.equal(predictions, y_target), tf.float32)
     accuracy = tf.reduce_mean(predictions_correct)
     # Declare batch size
     batch_size = 25
@@ -613,6 +614,7 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
         test_acc = []
         predict_y = []
         true_y = []
+        one_hot = []
 
         # Run training loop
         for i in range(rounds):  # on delta run range(5000)
@@ -635,19 +637,42 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
             temp_prediction = sess.run(prediction, feed_dict={x_data: test_x, y_target: test_y.eval()})
             predict_y.append(temp_prediction)
             true_y.append(test_y)
+            # get predicted y (one hot)
+            one_hot_prediction = sess.run(predictions, feed_dict={x_data: test_x, y_target: test_y.eval()})
+            one_hot.append(one_hot_prediction)
+
         mean_test_acc = sum(test_acc[-rounds // 3:]) / len(test_acc[-rounds // 3:])
         print("Accuracy:", mean_test_acc)
         plot(loss_vec, train_acc, test_acc)
         print(true_y[rounds - 1].shape)
         print(predict_y[rounds - 1].shape)
+        print(one_hot[rounds - 1])
 
-        return decode_one_hot(true_y[rounds - 1]).eval(), decode_one_hot(predict_y[rounds - 1]).eval()
+        return decode_one_hot(true_y[rounds - 1]).eval(), predict_y[rounds - 1]
+
+
+def cate_evaluation(test_y, predictions):
+    cm = metrics.confusion_matrix(test_y, predictions)
+    cm = (cm.T / cm.sum(axis=1)).T
+    index = ["Carcinoma(true)", "Adenocarcinoma", "Melanoma", "Lymphoma", "Leukemia", "Others"]
+    column = ["Carcinoma(pred)", "Adenocarcinoma", "Melanoma", "Lymphoma", "Leukemia", "Others"]
+    df = pd.DataFrame(cm, index, column)
+    print(df.to_string())
+    print("Accuracy:")
+    print(metrics.accuracy_score(test_y, predictions))
 
 
 def run_NN_model_cate():
+    test_y, predictions = NN_model_cate(rna_cnv_cate)
+    cate_evaluation(test_y, predictions)
+
+    test_y, predictions = NN_model_cate(rna_lnc_cate)
+    cate_evaluation(test_y, predictions)
+
+    test_y, predictions = NN_model_cate(cnv_lnc_cate)
+    cate_evaluation(test_y, predictions)
+
     test_y, predictions = NN_model_cate(rna_cnv_lnc_cate)
-    print(test_y)
-    print(predictions)
-    model_evaluation(test_y, predictions)
+    cate_evaluation(test_y, predictions)
 
 run_NN_model_cate()
