@@ -1,9 +1,12 @@
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 import numpy as np
 import tensorflow as tf
 from sklearn import datasets, preprocessing, linear_model, metrics, pipeline, impute, svm
 from tensorflow.python.framework import ops
 from keras import backend, models, layers, callbacks, optimizers
+from scipy import interp
+from itertools import cycle
 import requests
 import os.path
 import csv
@@ -102,16 +105,25 @@ rna_lnc_binary = pre_processing((x_vals_rna, x_vals_lnc, y_vals_bin))
 cnv_lnc_binary = pre_processing((x_vals_cnv, x_vals_lnc, y_vals_bin))
 rna_cnv_lnc_binary = pre_processing((x_vals_rna, x_vals_cnv, x_vals_lnc, y_vals_bin))
 
-# Single data type processed data with binary class
+# Single data type processed data with categorical class
 rna_processed_cate = pre_processing((x_vals_rna, y_class_num))
 cnv_processed_cate = pre_processing((x_vals_cnv, y_class_num))
 lnc_processed_cate = pre_processing((x_vals_lnc, y_class_num))
 
-# Combined processed data with binary class
+# Combined processed data with categorical class
 rna_cnv_cate = pre_processing((x_vals_rna, x_vals_cnv, y_class_num))
 rna_lnc_cate = pre_processing((x_vals_rna, x_vals_lnc, y_class_num))
 cnv_lnc_cate = pre_processing((x_vals_cnv, x_vals_lnc, y_class_num))
 rna_cnv_lnc_cate = pre_processing((x_vals_rna, x_vals_cnv, x_vals_lnc, y_class_num))
+
+dataset_dict = {"single RNA-seq data": rna_processed_cate,
+                "single copy number variation data": cnv_processed_cate,
+                "single long non-coding RNA-seq data": lnc_processed_cate,
+                "combined RNA-seq and copy number variation data": rna_cnv_cate,
+                "combined RNA-seq and long non-coding RNA-seq data": rna_lnc_cate,
+                "combined copy number variation and long non-coding RNA-seq data": cnv_lnc_cate,
+                "combined all data": rna_cnv_lnc_cate}
+
 # Select training and testing sets
 # Set seed for reproducible results
 seed = 99
@@ -565,7 +577,7 @@ def decode_one_hot(batch_of_vectors):
     return reshaped_nonzero_indices
 
 
-def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
+def NN_model_cate(data, rounds=10, c=0.1**3, dropout=0.80):
     train_x, test_x, train_y, test_y = train_test(data)
     train_y = tf.one_hot(indices=np.squeeze(train_y), depth=len(y_class_list))
     test_y = tf.one_hot(indices=np.squeeze(test_y), depth=len(y_class_list))
@@ -592,7 +604,7 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
     # Declare model operations "y = Ax_rna+Cx_cnv+b"
     model_output = tf.add(tf.matmul(hidden_output, A2), b2)
     # Declare loss function (Cross Entropy loss)
-    loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=model_output, labels=y_target))
+    loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=model_output, labels=y_target))
     # Declare optimizer
     my_opt = tf.train.GradientDescentOptimizer(c)
     train_step = my_opt.minimize(loss)
@@ -600,8 +612,8 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
     # Initialize global variables
     init = tf.global_variables_initializer()
     # Actual Prediction
-    predictions = tf.round(tf.sigmoid(model_output))  # model_output  y = 1 / (1 + exp(-x))
-    prediction = tf.argmax(tf.sigmoid(model_output), axis=1)
+    predictions = tf.round(tf.nn.softmax(model_output))  # model_output  y = 1 / (1 + exp(-x))
+    prediction = tf.argmax(tf.nn.softmax(model_output), axis=1)
     predictions_correct = tf.cast(tf.equal(predictions, y_target), tf.float32)
     accuracy = tf.reduce_mean(predictions_correct)
     # Declare batch size
@@ -647,32 +659,105 @@ def NN_model_cate(data, rounds=100, c=0.1**3, dropout=0.80):
         print(true_y[rounds - 1].shape)
         print(predict_y[rounds - 1].shape)
         print(one_hot[rounds - 1])
+        return test_acc, true_y[rounds - 1].eval(), decode_one_hot(true_y[rounds - 1]).eval(), one_hot[rounds - 1], predict_y[rounds - 1]
 
-        return decode_one_hot(true_y[rounds - 1]).eval(), predict_y[rounds - 1]
 
-
-def cate_evaluation(test_y, predictions):
+def cate_evaluation(test_y, predictions, filename):
     cm = metrics.confusion_matrix(test_y, predictions)
     cm = (cm.T / cm.sum(axis=1)).T
     index = ["Carcinoma(true)", "Adenocarcinoma", "Melanoma", "Lymphoma", "Leukemia", "Others"]
     column = ["Carcinoma(pred)", "Adenocarcinoma", "Melanoma", "Lymphoma", "Leukemia", "Others"]
     df = pd.DataFrame(cm, index, column)
+    with PdfPages('Results/table_of_'+filename+'.pdf') as pdf:
+        fig, ax = plt.subplots(1, 1, figsize=(12, 12))
+        ax.get_xaxis().set_visible(False)
+        df.plot(table=np.round(df, 2), ax=ax)
+        plt.ylim([0.0, 1.05])
+        plt.title('Confusion matrix of '+filename)
+        plt.ylabel('Percentage')
+        plt.legend(loc="upper right")
+        pdf.savefig()
+        plt.close()
+
     print(df.to_string())
     print("Accuracy:")
     print(metrics.accuracy_score(test_y, predictions))
 
 
+def cate_roc(y_test, y_score, filename):
+    # Compute ROC curve and ROC area for each class
+    n_classes = len(y_class_list)
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    for i in range(n_classes):
+        fpr[i], tpr[i], _ = metrics.roc_curve(y_test[:, i], y_score[:, i])
+        roc_auc[i] = metrics.auc(fpr[i], tpr[i])
+    # Compute micro-average ROC curve and ROC area
+    fpr["micro"], tpr["micro"], _ = metrics.roc_curve(y_test.ravel(), y_score.ravel())
+    roc_auc["micro"] = metrics.auc(fpr["micro"], tpr["micro"])
+    # Compute macro-average ROC curve and ROC area
+    # First aggregate all false positive rates
+    all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+    # Then interpolate all ROC curves at this points
+    mean_tpr = np.zeros_like(all_fpr)
+    for i in range(n_classes):
+        mean_tpr += interp(all_fpr, fpr[i], tpr[i])
+    # Finally average it and compute AUC
+    mean_tpr /= n_classes
+    fpr["macro"] = all_fpr
+    tpr["macro"] = mean_tpr
+    roc_auc["macro"] = metrics.auc(fpr["macro"], tpr["macro"])
+    # Plot all ROC curves
+    f = plt.figure(figsize=(12, 8))
+    plt.plot(fpr["micro"], tpr["micro"],
+             label='micro-average ROC curve (area = {0:0.2f})'
+                   ''.format(roc_auc["micro"]),
+             color='deeppink', linestyle=':', linewidth=4)
+    plt.plot(fpr["macro"], tpr["macro"],
+             label='macro-average ROC curve (area = {0:0.2f})'
+                   ''.format(roc_auc["macro"]),
+             color='navy', linestyle=':', linewidth=4)
+    colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'violet', 'springgreen', 'mediumaquamarine'])
+    for i, color in zip(range(n_classes), colors):
+        plt.plot(fpr[i], tpr[i], color=color, lw=2,
+                 label='ROC curve of class {0} (area = {1:0.2f})'
+                       ''.format(y_class_list[i], roc_auc[i]))
+    plt.plot([0, 1], [0, 1], 'k--', lw=2)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic to multi-class of cancer of '+filename)
+    plt.legend(loc="lower right")
+    plt.show()
+    f.savefig('Results/roc_curve_of_'+filename+'.pdf', bbox_inches='tight')
+
+
+def compare_acc_plot(acc_dict: dict):
+    f = plt.figure(figsize=(12, 8))
+    colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'violet', 'springgreen', 'mediumaquamarine', 'orange'])
+    for i, color in zip(acc_dict.keys(), colors):
+        plt.plot(acc_dict[i], color=color, lw=2,
+                 label='Accuracy of {0}'
+                       ''.format(i))
+    plt.title('Test data accuracy of different data combination')
+    plt.xlabel('Generation')
+    plt.ylabel('Accuracy')
+    plt.legend(loc="lower right")
+    plt.show()
+    f.savefig('Results/Accuracy_plot_of_all_combination.pdf', bbox_inches='tight')
+
+
+
+
 def run_NN_model_cate():
-    test_y, predictions = NN_model_cate(rna_cnv_cate)
-    cate_evaluation(test_y, predictions)
+    acc_dict = dict()
+    for key in dataset_dict:
+        acc_dict[key], one_hot_test_y, test_y, one_hot_pred, predictions = NN_model_cate(dataset_dict[key])
+        cate_evaluation(test_y, predictions, key)
+        cate_roc(one_hot_test_y, one_hot_pred, key)
+    compare_acc_plot(acc_dict)
 
-    test_y, predictions = NN_model_cate(rna_lnc_cate)
-    cate_evaluation(test_y, predictions)
-
-    test_y, predictions = NN_model_cate(cnv_lnc_cate)
-    cate_evaluation(test_y, predictions)
-
-    test_y, predictions = NN_model_cate(rna_cnv_lnc_cate)
-    cate_evaluation(test_y, predictions)
 
 run_NN_model_cate()
