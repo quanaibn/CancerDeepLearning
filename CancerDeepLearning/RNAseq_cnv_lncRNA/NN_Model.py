@@ -7,6 +7,7 @@ from tensorflow.python.framework import ops
 from keras import backend, models, layers, callbacks, optimizers
 from scipy import interp
 from itertools import cycle
+from scipy.interpolate import spline
 import requests
 import os.path
 import csv
@@ -123,6 +124,26 @@ dataset_dict = {"single RNA-seq data": rna_processed_cate,
                 "combined RNA-seq and long non-coding RNA-seq data": rna_lnc_cate,
                 "combined copy number variation and long non-coding RNA-seq data": cnv_lnc_cate,
                 "combined all data": rna_cnv_lnc_cate}
+
+index_dataset_dict = {"ALL": ["single RNA-seq data",
+                              "single copy number variation data",
+                              "single long non-coding RNA-seq data",
+                              "combined RNA-seq and copy number variation data",
+                              "combined RNA-seq and long non-coding RNA-seq data",
+                              "combined copy number variation and long non-coding RNA-seq data",
+                              "combined all data"],
+                      "RNA": ["single RNA-seq data",
+                              "combined RNA-seq and copy number variation data",
+                              "combined RNA-seq and long non-coding RNA-seq data",
+                              "combined all data"],
+                      "CNV": ["single copy number variation data",
+                              "combined RNA-seq and copy number variation data",
+                              "combined copy number variation and long non-coding RNA-seq data",
+                              "combined all data"],
+                      "LNC": ["single long non-coding RNA-seq data",
+                              "combined RNA-seq and long non-coding RNA-seq data",
+                              "combined copy number variation and long non-coding RNA-seq data",
+                              "combined all data"]}
 
 # Select training and testing sets
 # Set seed for reproducible results
@@ -710,6 +731,7 @@ def cate_roc(y_test, y_score, filename):
     roc_auc["macro"] = metrics.auc(fpr["macro"], tpr["macro"])
     # Plot all ROC curves
     f = plt.figure(figsize=(12, 8))
+    '''
     plt.plot(fpr["micro"], tpr["micro"],
              label='micro-average ROC curve (area = {0:0.2f})'
                    ''.format(roc_auc["micro"]),
@@ -718,6 +740,7 @@ def cate_roc(y_test, y_score, filename):
              label='macro-average ROC curve (area = {0:0.2f})'
                    ''.format(roc_auc["macro"]),
              color='navy', linestyle=':', linewidth=4)
+    '''
     colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'violet', 'springgreen', 'mediumaquamarine'])
     for i, color in zip(range(n_classes), colors):
         plt.plot(fpr[i], tpr[i], color=color, lw=2,
@@ -734,30 +757,45 @@ def cate_roc(y_test, y_score, filename):
     f.savefig('Results/roc_curve_of_'+filename+'.pdf', bbox_inches='tight')
 
 
-def compare_acc_plot(acc_dict: dict):
+def compare_acc_plot(acc_dict: dict, index_dict=None, data_type=None):
     f = plt.figure(figsize=(12, 8))
     colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'violet', 'springgreen', 'mediumaquamarine', 'orange'])
     for i, color in zip(acc_dict.keys(), colors):
-        plt.plot(acc_dict[i], color=color, lw=2,
-                 label='Accuracy of {0}'
-                       ''.format(i))
-    plt.title('Test data accuracy of different data combination')
+        if i in index_dict[data_type]:
+            x = range(len(acc_dict[i]))
+            y = acc_dict[i]
+            x_sm = np.array(x)
+            y_sm = np.array(y)
+            x_smooth = np.linspace(x_sm.min(), x_sm.max(), len(y)*10)
+            y_smooth = spline(x, y, x_smooth)
+            plt.plot(x_smooth, y_smooth, color=color, lw=2,
+                     label='Accuracy of {0}'
+                           ''.format(i))
+    plt.title('Test data accuracy of different data combination contain '+data_type)
     plt.xlabel('Generation')
     plt.ylabel('Accuracy')
     plt.legend(loc="lower right")
     plt.show()
-    f.savefig('Results/Accuracy_plot_of_all_combination.pdf', bbox_inches='tight')
+    f.savefig('Results_updated/Accuracy_plot_of_all_combination contain '+data_type+'.pdf', bbox_inches='tight')
 
 
+def save_file(acc, one_hot_test_y, test_y, one_hot_pred, predictions, key):
+    np.savetxt('Data/acc_'+key+'.csv', acc, delimiter=',')
+    np.savetxt('Data/one_hot_test_y_' + key + '.csv', one_hot_test_y, delimiter=',', fmt='%i')
+    np.savetxt('Data/test_y_' + key + '.csv', test_y, delimiter=',', fmt='%i')
+    np.savetxt('Data/one_hot_pred_' + key + '.csv', one_hot_pred, delimiter=',', fmt='%i')
+    np.savetxt('Data/predictions_' + key + '.csv', predictions, delimiter=',', fmt='%i')
 
 
 def run_NN_model_cate():
     acc_dict = dict()
     for key in dataset_dict:
         acc_dict[key], one_hot_test_y, test_y, one_hot_pred, predictions = NN_model_cate(dataset_dict[key])
+        save_file(acc_dict[key], one_hot_test_y, test_y, one_hot_pred, predictions, key)
         cate_evaluation(test_y, predictions, key)
         cate_roc(one_hot_test_y, one_hot_pred, key)
-    compare_acc_plot(acc_dict)
+    for key in index_dataset_dict:
+        compare_acc_plot(acc_dict, index_dataset_dict, key)
 
 
 run_NN_model_cate()
